@@ -11,3 +11,9 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+# Temporary database dumps and tests
+scratch/dump_*.sql
+scratch/test_tidb.php
+
+

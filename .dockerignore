@@ -1,0 +1,5 @@
+.git
+.gitignore
+.vscode
+.gemini
+scratch/dump_*.sql

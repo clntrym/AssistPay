@@ -1,0 +1,2 @@
+# Never serve database scripts over the web
+Require all denied

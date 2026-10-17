@@ -1,0 +1,4 @@
+# Shared include files (starting with "_") are not endpoints
+<FilesMatch "^_">
+    Require all denied
+</FilesMatch>

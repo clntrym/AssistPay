@@ -1,0 +1,8 @@
+<FilesMatch "\.(jpg|jpeg|png|webp)$">
+    Require all granted
+</FilesMatch>
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|php8|phps|cgi|pl|exe|sh|bat)$">
+    Require all denied
+</FilesMatch>
+Options -ExecCGI -Indexes
+

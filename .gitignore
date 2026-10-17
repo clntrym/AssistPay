@@ -1,0 +1,13 @@
+# IDE & Editor settings
+.vscode/
+.idea/
+
+# AI Assistant scratch & internal cache
+.gemini/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

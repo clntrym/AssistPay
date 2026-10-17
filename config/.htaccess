@@ -1,0 +1,2 @@
+# Never serve configuration files over the web
+Require all denied

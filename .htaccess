@@ -1,0 +1,15 @@
+# Development settings for AssistPay.
+# The browser must never serve a stale copy of the app files, otherwise edits to
+# js/ or css/ appear to do nothing until a hard refresh.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(js|css|html)$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>
+
+# Hide dot-files and backups from the web
+<FilesMatch "^\.|~$">
+    Require all denied
+</FilesMatch>

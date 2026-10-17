@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <script>
+        try {
+            const savedScheme = localStorage.getItem("color-scheme");
+            const isDark = savedScheme === "dark";
+            document.querySelector('meta[name="color-scheme"]').content = isDark ? "dark" : "light";
+            document.documentElement.dataset.theme = isDark ? "dark" : "light";
+            if (isDark) document.documentElement.classList.add("dark");
+            else document.documentElement.classList.remove("dark");
+        } catch {}
+    </script>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>AssistPay | NCST S.A. System</title>
+    <link rel="icon" type="image/png" href="assets/logo-96.png">
+
+    <!-- Poppins & Caveat (falls back to system fonts when offline) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap">
+
+    <!-- Tailwind CSS (browser build) + AssistPay theme -->
+    <script src="Vue.js/vue-app/js/tailwindcss.js"></script>
+    <script src="js/tailwind.config.js"></script>
+    <link rel="stylesheet" href="js/vendor/leaflet/leaflet.css">
+    <link rel="stylesheet" href="css/app.css?v=20261016_dark_sa1">
+
+    <!-- Shared component classes (form controls, buttons, cards) -->
+    <style type="text/tailwindcss">
+        @layer components {
+            .field-label { @apply mb-1.5 block text-[13px] font-medium text-ink; }
+            .input {
+                @apply w-full rounded-lg border border-line bg-white px-3 py-2.5 text-body text-ink
+                       placeholder:text-disabled transition-colors duration-150
+                       focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy/15
+                       disabled:cursor-not-allowed disabled:bg-page disabled:text-muted;
+            }
+            .input-error { @apply border-danger focus:border-danger focus:ring-danger/15; }
+            .btn {
+                @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5
+                       text-[14px] font-semibold transition-colors duration-150
+                       disabled:cursor-not-allowed disabled:opacity-60;
+            }
+            .btn-sm { @apply px-3 py-1.5 text-[13px]; }
+            .btn-primary { @apply bg-navy text-white hover:bg-navy-700; }
+            .btn-secondary { @apply border border-line bg-white text-ink hover:bg-page; }
+            .btn-danger { @apply bg-danger text-white hover:bg-danger/90; }
+            .btn-ghost { @apply text-navy hover:bg-mist; }
+            .card { @apply rounded-xl border border-line bg-white shadow-card; }
+        }
+    </style>
+</head>
+
+<body class="bg-page font-sans text-ink antialiased">
+    <div id="app"></div>
+
+    <!-- Libraries -->
+    <script src="Vue.js/vue-app/js/Vue.js"></script>
+    <script src="Vue.js/vue-app/js/VueRouter.js"></script>
+    <script src="Vue.js/vue-app/resources/lucide.min.js"></script>
+    <script src="js/vendor/sweetalert2.all.min.js"></script>
+    <script src="js/vendor/leaflet/leaflet.js"></script>
+    <script src="js/vendor/signature_pad.umd.min.js"></script>
+    <script src="js/lib/face-api.min.js"></script>
+
+    <!-- AssistPay -->
+    <script src="js/store.js?v=20261017_all_swal1"></script>
+    <script src="js/lib/alerts.js?v=20261017_all_swal1"></script>
+    <script src="js/model.js?v=20261015_sup_attend1"></script>
+    <script src="js/labels.js?v=20261015_labels2"></script>
+    <script src="js/navigation.js?v=20261016_hide_sup_reports1"></script>
+
+    <!-- Components -->
+    <script src="js/components/app-icon.js"></script>
+    <script src="js/components/app-modal.js?v=20261017_modal_top1"></script>
+    <script src="js/components/toast-stack.js?v=20261017_all_swal1"></script>
+    <script src="js/components/app-sidebar.js?v=20261014_theme_icon1"></script>
+    <script src="js/components/app-topbar.js?v=20261017_perfect_att2"></script>
+    <script src="js/components/page-header.js?v=20261012_board2"></script>
+    <script src="js/components/attendance-map.js?v=20261016_username1"></script>
+    <script src="js/components/password-field.js?v=20261012_auth"></script>
+    <script src="js/components/status-badge.js?v=20261012_req1"></script>
+    <script src="js/components/form-field.js"></script>
+    <script src="js/components/credentials-panel.js"></script>
+    <script src="js/components/sa-profile-view.js?v=20261017_profile_cards_extended"></script>
+    <script src="js/components/disciplinary-memo-modal.js?v=20261011_viol"></script>
+    <script src="js/components/sa-disciplinary-panel.js?v=20261011_viol"></script>
+    <script src="js/components/plotted-duty-modal.js?v=20261017_strict10pm"></script>
+    <script src="js/lib/xlsx-reader.js"></script>
+    <script src="js/lib/xlsx-rooms.js"></script>
+    <script src="js/lib/xlsx-classes.js"></script>
+    <script src="js/lib/cor-image.js"></script>
+    <script src="js/lib/cor-enrollment.js"></script>
+    <script src="js/config/room-requirements.js"></script>
+    <script src="js/components/rooms-panel.js?v=20261011_reqsa"></script>
+    <script src="js/components/xlsx-class-import.js"></script>
+    <script src="js/components/cor-image-import.js"></script>
+    <script src="js/components/coordinator-ai-chatbot.js?v=20261016_ai_chat2"></script>
+
+    <!-- Pages -->
+    <script src="js/views/planned-page.js"></script>
+    <script src="js/views/not-found.js"></script>
+    <script src="js/views/login-page.js?v=20261017_swal1"></script>
+    <script src="js/views/change-password-page.js?v=20261017_swal1"></script>
+    <script src="js/lib/xlsx-writer.js"></script>
+    <script src="js/lib/duty-form.js"></script>
+    <script src="js/views/admin/dashboard.js?v=20261017_streaks1"></script>
+    <script src="js/views/admin/sa-list.js?v=20261017_mode_status1"></script>
+    <script src="js/views/admin/sa-form.js?v=20261017_english1"></script>
+    <script src="js/views/admin/sa-detail.js?v=20261017_deep_notif1"></script>
+    <script src="js/views/admin/supervisor-management.js?v=20261017_datatable1"></script>
+    <script src="js/views/admin/semester-setup.js?v=20261017_semester_no_action1"></script>
+    <script src="js/views/admin/class-schedules.js?v=20261017_datatable1"></script>
+    <script src="js/views/admin/room-lab.js?v=20261017_swal1"></script>
+    <script src="js/views/admin/office-staffing.js?v=20261017_datatable1"></script>
+    <script src="js/views/admin/schedule-matching.js?v=20261017_english1"></script>
+    <script src="js/views/admin/duty-grid.js?v=20261017_reliever_grid1"></script>
+    <script src="js/views/admin/recommendations.js?v=20261011_v3"></script>
+    <script src="js/views/admin/finalized-schedule.js?v=20261017_consistent_colors_7to10pm"></script>
+    <script src="js/views/admin/final-schedule.js?v=20261017_english1"></script>
+    <script src="js/views/admin/attendance-page.js?v=20261017_undertime_late1"></script>
+    <script src="js/views/admin/perfect-attendance.js?v=20261017_streaks1"></script>
+    <script src="js/views/admin/allowance-page.js?v=20261017_fix_edit_rate1"></script>
+    <script src="js/views/admin/requests-page.js?v=20261017_deep_notif1"></script>
+    <script src="js/views/admin/deductions-page.js?v=20261017_swal1"></script>
+    <script src="js/views/admin/evaluations-page.js?v=20261017_datatable1"></script>
+    <script src="js/views/admin/reports-page.js?v=20261014_reports_visual_analytics1"></script>
+    <script src="js/views/admin/admin-settings.js?v=20261017_english1"></script>
+    <script src="js/views/supervisor/team.js?v=20261017_reliever1"></script>
+    <script src="js/views/supervisor/attendance-review.js?v=20261017_undertime_late1"></script>
+    <script src="js/views/supervisor/requests-page.js?v=20261017_deep_notif1"></script>
+    <script src="js/views/supervisor/reports-page.js?v=20261016_sup_noredundant2"></script>
+    <script src="js/views/sa/dashboard.js?v=20261016_badge_fix1"></script>
+    <script src="js/views/sa/attendance-capture.js?v=20261017_streaks1"></script>
+    <script src="js/views/sa/my-profile.js?v=20261017_profile_cards_extended"></script>
+    <script src="js/views/sa/my-schedule.js?v=20261017_sync_sup1"></script>
+    <script src="js/views/sa/my-requests.js?v=20261017_deep_notif1"></script>
+    <script src="js/views/sa/my-allowance.js?v=20261016_myallowance5"></script>
+    <script src="js/views/sa/my-history.js?v=20261016_history1"></script>
+    <script src="js/views/sa/my-deductions.js?v=20261017_swal1"></script>
+    <script src="js/views/sa/my-school-balance.js?v=20261017_datatable1"></script>
+    <script src="js/views/students/dashboard.js"></script>
+    <script src="js/views/students/student-records.js"></script>
+    <script src="js/views/students/curriculum.js"></script>
+    <script src="js/views/students/enrollment.js?v=20261011_fees"></script>
+    <script src="js/views/students/grades.js"></script>
+    <script src="js/views/students/academic-docs.js"></script>
+    <script src="js/views/students/pending-review.js"></script>
+    <script src="js/views/students/audit-logs.js?v=20261011_own"></script>
+    <script src="js/views/students/settings.js?v=20261016_theme_nosystem1"></script>
+    <script src="js/router.js?v=20261017_perfect_att2"></script>
+    <script src="js/controller.js?v=20261017_perfect_att2"></script>
+</body>
+</html>

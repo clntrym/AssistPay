@@ -428,7 +428,7 @@ function validate_sa(array $in, ?array $existing = null): array
                 $reqRow = $reqStmt->fetch();
                 if (!$reqRow || $reqRow['required_sa'] === null || (int) $reqRow['required_sa'] <= 0) {
                     $offName = $reqRow['name'] ?? 'This office';
-                    $e['officeId'] = "No vacancy! Ang opisina na {$offName} ay walang naka-set na S.A. requirement para sa semester na ito.";
+                    $e['officeId'] = "No vacancy! Office {$offName} has no S.A. requirement configured for this semester.";
                 } else {
                     $reqCap = (int) $reqRow['required_sa'];
                     $existingId = $existing ? (int) $existing['id'] : 0;
@@ -436,7 +436,7 @@ function validate_sa(array $in, ?array $existing = null): array
                     $cntStmt->execute([(int) $c['office_id'], $existingId]);
                     $otherAssigned = (int) $cntStmt->fetchColumn();
                     if ($otherAssigned >= $reqCap) {
-                        $e['officeId'] = "No vacancy! Ang opisina na {$reqRow['name']} ay puno na ({$otherAssigned}/{$reqCap} slots occupied · 0 vacant). Hindi maaaring mag-save.";
+                        $e['officeId'] = "No vacancy! Office {$reqRow['name']} is full ({$otherAssigned}/{$reqCap} slots occupied · 0 vacant). Cannot save.";
                     }
                 }
             }

@@ -7324,7 +7324,7 @@ function final_schedule_save_sa(
             create_notification(
                 $saUserId,
                 'Your Official Duty Schedule Was Updated',
-                "In-update ng S.A. Coordinator ang iyong official duty schedule sa {$locationSummary} ({$credTotal} credited hrs/wk). Reason: {$reason}",
+                "The S.A. Coordinator updated your official duty schedule at {$locationSummary} ({$credTotal} credited hrs/wk). Reason: {$reason}",
                 'SCHEDULE_UPDATED',
                 '/sa/schedule',
                 $userId

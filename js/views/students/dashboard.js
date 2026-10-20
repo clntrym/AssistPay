@@ -802,7 +802,7 @@ const RegistrarDashboardPage = {
 
                             <div class="flex items-start gap-2 p-2.5 bg-slate-50 border border-line rounded-lg text-[11px] text-muted">
                                 <app-icon name="Info" :size="14" class="mt-0.5 shrink-0 text-navy" />
-                                <span>Ito ay opisyal na assessment preview mula sa COR. Ang payment status, official receipts, at balances ay pino-proseso at kinukumpirma sa <strong>Finance / Cashier Office</strong>.</span>
+                                <span>This is an official assessment preview from the COR. Payment status, official receipts, and account balances are processed and confirmed at the <strong>Finance / Cashier Office</strong>.</span>
                             </div>
 
                             <div class="border-t border-line pt-3">

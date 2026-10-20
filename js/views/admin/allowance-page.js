@@ -3560,7 +3560,7 @@ const AllowancePage = {
                             1. Select S.A.s by Current Rate
                         </span>
                         <p class="text-[11px] text-muted">
-                            Piliin kung sino ang mga S.A. na naka-rate ng ₱8, ₱9, ₱10, atbp. gamit ang mga rate filters at select all / unselect checkbox.
+                            Select which S.A.s are currently set at ₱8, ₱9, ₱10, etc., using the rate filter buttons and checkboxes.
                         </p>
                     </div>
                     <div class="flex items-center gap-2">

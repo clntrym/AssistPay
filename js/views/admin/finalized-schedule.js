@@ -379,13 +379,13 @@ const FinalizedSchedulePage = {
                             <li><b>${nSup} Department &amp; Office Supervisors</b> received an in-app notification and can now view their assigned S.A.s in <b>My S.A. Team</b>.</li>
                         </ul>
                         <p class="text-navy font-semibold pt-2 text-[13px]">
-                            Nai-unlock na rin ang <b>Step 8: Schedule Adjustment</b> at makikita na ang lahat ng iskedyul para sa individual adjustments.
+                            <b>Step 8: Schedule Adjustment</b> has also been unlocked, allowing individual schedule fine-tuning and adjustments.
                         </p>
                     </div>
                 `,
                 showCancelButton: true,
-                confirmButtonText: "Bumukas sa Schedule Adjustment",
-                cancelButtonText: "Manatili sa Step 7",
+                confirmButtonText: "Go to Schedule Adjustment",
+                cancelButtonText: "Stay on Step 7",
                 confirmButtonColor: "#0a143c",
                 cancelButtonColor: "#64748b"
             });

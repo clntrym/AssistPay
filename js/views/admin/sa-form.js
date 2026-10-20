@@ -561,7 +561,7 @@ const SaFormPage = {
                     } else {
                         const off = (options.value?.offices || []).find(o => Number(o.id) === Number(form.officeId));
                         if (off && !isOfficeAvailable(off)) {
-                            e.officeId = `No vacancy! Ang opisina na ${off.name} ay puno na (0 vacant slots). Hindi maaaring mag-save.`;
+                            e.officeId = `No vacancy! The office ${off.name} is already full (0 vacant slots). Cannot save.`;
                         }
                     }
                 }

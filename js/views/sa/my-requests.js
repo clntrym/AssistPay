@@ -398,7 +398,7 @@ const SaRequestsPage = {
                     toneClass: "bg-amber-50 border border-amber-300 text-amber-900",
                     icon: "AlertTriangle",
                     title: "Same-Day Filing Not Permitted",
-                    message: "Hindi maaaring mag-pasa ng excuse slip sa mismong araw ng absence. Ang advance excuse requests ay nangangailangan ng hindi bababa sa 3 calendar days notice bago ang petsa ng absence, habang ang retrospective excuse slips naman ay pwedeng ipasa para sa mga nakalipas na araw (past dates) matapos makumpleto ang absence."
+                    message: "Excuse slips cannot be filed on the same day as the absence. Advance excuse requests require at least 3 calendar days advance notice, while retrospective excuse slips may be submitted for past dates after the absence has concluded."
                 };
             }
 
@@ -1629,9 +1629,9 @@ const SaRequestsPage = {
                                         </span>
                                     </div>
                                     <p class="text-[11px] text-slate-600 leading-relaxed">
-                                        • <strong>Retrospective Absences (Nakalipas na Araw):</strong> Pwedeng mag-pasa para sa mga nakalipas na araw sa sakop na cutoff, may <strong>{{ excuseSlipGraceDays || 2 }}-calendar-day grace period</strong> matapos mag-end ang cutoff.<br>
-                                        • <strong>Same-Day Restriction:</strong> Bawal mag-pasa sa mismong araw ng absence (hindi pwedeng mag-pasa within that day).<br>
-                                        • <strong>Advance Notice:</strong> Para sa advance requests, dapat mag-file nang hindi bababa sa <strong>tatlong (3) calendar days prior</strong> sa absence date.
+                                        • <strong>Retrospective Absences (Past Dates):</strong> Submissions are permitted for past dates within the covered cutoff, with a <strong>{{ excuseSlipGraceDays || 2 }}-calendar-day grace period</strong> after the cutoff concludes.<br>
+                                        • <strong>Same-Day Restriction:</strong> Submissions on the exact day of absence are strictly not permitted.<br>
+                                        • <strong>Advance Notice:</strong> For advance requests, submissions must be made at least <strong>three (3) calendar days prior</strong> to the absence date.
                                     </p>
                                 </div>
                             </div>

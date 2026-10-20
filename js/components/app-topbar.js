@@ -337,8 +337,8 @@ const AppTopbar = {
                             <!-- Empty State -->
                             <div v-if="!Store.notifications.length" class="p-8 text-center text-muted">
                                 <app-icon name="BellOff" :size="28" class="mx-auto mb-2 text-muted/60" />
-                                <p class="text-caption font-semibold text-ink">Walang bagong notification</p>
-                                <p class="text-[11px] text-muted mt-0.5">Lalabas dito ang mga updates sa duty, plotting, at schedules.</p>
+                                <p class="text-caption font-semibold text-ink">No new notifications</p>
+                                <p class="text-[11px] text-muted mt-0.5">Updates regarding duty, plotting, and schedules will appear here.</p>
                             </div>
                         </div>
                     </div>

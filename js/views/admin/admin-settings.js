@@ -907,14 +907,14 @@ const AdminSettingsPage = {
                 </div>
 
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <form-field label="Minimum Required Duty Hours" required hint="Minimum duty hours na kailangang gampanan ng S.A. kada linggo." v-slot="f">
+                    <form-field label="Minimum Required Duty Hours" required hint="Minimum duty hours required for each S.A. per week." v-slot="f">
                         <div class="relative">
                             <input :id="f.id" v-model.number="settingsForm.minWeeklyDutyHours" type="number" min="1" max="168" class="input pr-16" placeholder="35">
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">hrs/week</span>
                         </div>
                     </form-field>
 
-                    <form-field label="Maximum Allowed Duty Hours" required hint="Maximum duty hours na pinapayagan para sa bawat S.A. kada linggo." v-slot="f">
+                    <form-field label="Maximum Allowed Duty Hours" required hint="Maximum duty hours allowed for each S.A. per week." v-slot="f">
                         <div class="relative">
                             <input :id="f.id" v-model.number="settingsForm.maxWeeklyDutyHours" type="number" min="1" max="168" class="input pr-16" placeholder="50">
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">hrs/week</span>
@@ -926,7 +926,7 @@ const AdminSettingsPage = {
                     <app-icon name="ShieldAlert" :size="16" class="shrink-0 mt-0.5 text-amber-600" />
                     <div>
                         <p class="font-bold">Weekly Duty Load Policy:</p>
-                        <p class="mt-0.5">Ang weekly duty load ng mga S.A. ay dinamikong ibinabatay sa minimum at maximum settings na itinakda rito para sa partner matching, room duty distribution, at validation.</p>
+                        <p class="mt-0.5">The weekly duty load of S.A.s is dynamically based on the minimum and maximum settings configured here for partner matching, room duty distribution, and validation.</p>
                     </div>
                 </div>
             </div>
@@ -1040,10 +1040,10 @@ const AdminSettingsPage = {
                         </div>
 
                         <div class="grid gap-3 sm:grid-cols-2">
-                            <form-field label="App Username (Optional)" hint="Kung nag-set ng username sa Android app." v-slot="f">
+                            <form-field label="App Username (Optional)" hint="If a username was configured in the Android app." v-slot="f">
                                 <input :id="f.id" v-model="settingsForm.android_gateway_user" type="text" class="input text-sm" placeholder="admin">
                             </form-field>
-                            <form-field label="App Password (Optional)" hint="Kung nag-set ng password sa Android app." v-slot="f">
+                            <form-field label="App Password (Optional)" hint="If a password was configured in the Android app." v-slot="f">
                                 <input :id="f.id" v-model="settingsForm.android_gateway_pass" type="password" class="input text-sm" placeholder="••••••••">
                             </form-field>
                         </div>
@@ -1052,13 +1052,13 @@ const AdminSettingsPage = {
                         <div class="p-3 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 text-xs text-slate-700 dark:text-slate-300 space-y-1.5">
                             <p class="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                                 <app-icon name="HelpCircle" :size="14" />
-                                <span>Paano ito paganahin (Quick Setup):</span>
+                                <span>How to set up (Quick Setup):</span>
                             </p>
                             <ol class="list-decimal pl-5 space-y-1 text-[11px] leading-relaxed">
-                                <li>I-download ang libreng <strong>Android SMS Gateway</strong> app sa Android phone (mula sa Play Store o GitHub: <code>capcom6/android-sms-gateway</code> o <code>SMS Gateway</code>).</li>
-                                <li>Siguraduhing may SIM card ang phone na naka-register sa <strong>Unli-Text Promo</strong> (Smart, Globe, Dito, TNT).</li>
-                                <li>I-konekta ang PC/Laptop at Phone sa <strong>iisang Wi-Fi</strong>, o i-on ang <strong>Hotspot</strong> ng phone at ikonekta ang PC sa hotspot.</li>
-                                <li>Pindutin ang <strong>Start Server</strong> sa Android app. Lalabas doon ang IP address (hal. <code>http://192.168.1.100:8080</code>). I-paste ito sa field sa itaas at i-click ang Test!</li>
+                                <li>Download the free <strong>Android SMS Gateway</strong> app on your Android phone (from Play Store or GitHub: <code>capcom6/android-sms-gateway</code> or <code>SMS Gateway</code>).</li>
+                                <li>Ensure the phone's SIM card is active with an <strong>Unlimited SMS Promo</strong> (Smart, Globe, Dito, TNT).</li>
+                                <li>Connect the PC/Laptop and Phone to the <strong>same Wi-Fi network</strong>, or enable the phone's <strong>Hotspot</strong> and connect the PC to it.</li>
+                                <li>Tap <strong>Start Server</strong> in the Android app. The IP address will appear there (e.g. <code>http://192.168.1.100:8080</code>). Paste it into the field above and click Test Send SMS!</li>
                             </ol>
                         </div>
                     </div>
@@ -1070,7 +1070,7 @@ const AdminSettingsPage = {
                             <div>
                                 <h3 class="text-sm font-bold text-sky-900 dark:text-sky-200">Semaphore Cloud SMS Gateway (semaphore.co)</h3>
                                 <p class="text-xs text-sky-800/90 dark:text-sky-300/80 mt-0.5">
-                                    Nangangailangan ng approved account at active SMS credits sa semaphore.co.
+                                    Requires an approved account and active SMS credits at semaphore.co.
                                 </p>
                             </div>
                         </div>
@@ -1092,14 +1092,14 @@ const AdminSettingsPage = {
                             <div>
                                 <h3 class="text-sm font-bold text-amber-900 dark:text-amber-200">TextBee Cloud-Paired Android Gateway (textbee.dev)</h3>
                                 <p class="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
-                                    I-pair ang iyong Android phone sa textbee.dev gamit ang QR code. Gumagana kahit magkaiba ang Wi-Fi network ng laptop at phone.
+                                    Pair your Android phone with textbee.dev using the QR code. Works even if your laptop and phone are on different Wi-Fi networks.
                                 </p>
                             </div>
                         </div>
 
                         <div class="grid gap-3 sm:grid-cols-2">
                             <form-field label="TextBee API Key" required v-slot="f">
-                                <input :id="f.id" v-model="settingsForm.textbee_api_key" type="text" class="input font-mono text-sm" placeholder="API Key mula sa textbee.dev">
+                                <input :id="f.id" v-model="settingsForm.textbee_api_key" type="text" class="input font-mono text-sm" placeholder="API Key from textbee.dev">
                             </form-field>
                             <form-field label="Device ID (Optional)" v-slot="f">
                                 <input :id="f.id" v-model="settingsForm.textbee_device_id" type="text" class="input text-sm" placeholder="Device ID">
@@ -1112,7 +1112,7 @@ const AdminSettingsPage = {
                         <div class="flex items-center gap-2 flex-1">
                             <app-icon name="Send" :size="16" class="text-navy shrink-0" />
                             <input v-model="testPhone" type="text" maxlength="15" class="input py-1.5 text-xs font-mono max-w-[220px]" placeholder="Test number (09xxxxxxxxx)" />
-                            <span class="text-[11px] text-muted hidden sm:inline">I-test kung nakakapasok ang SMS sa cellphone bago i-save.</span>
+                            <span class="text-[11px] text-muted hidden sm:inline">Test if SMS messages are delivered to the mobile phone before saving.</span>
                         </div>
                         <button type="button" @click="testSmsConnection" :disabled="testSending" class="btn btn-secondary btn-sm shrink-0">
                             <app-icon :name="testSending ? 'LoaderCircle' : 'Send'" :size="14" :class="testSending ? 'animate-spin' : ''" />

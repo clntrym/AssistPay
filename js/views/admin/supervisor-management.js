@@ -502,7 +502,7 @@ const SupervisorManagementPage = {
                 await Alerts.success("Status Updated", res.message || `Status updated to ${newStatus} for ${getFullName(s)}.`);
                 fetchSupervisors();
             } else if (!res.cancelled) {
-                Alerts.error('Status Update Failed', res.message || 'Hindi na-update ang status.');
+                Alerts.error('Status Update Failed', res.message || 'Failed to update status.');
             }
         };
 

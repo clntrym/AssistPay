@@ -237,12 +237,12 @@ const SaSchedulePage = {
         const reasonDetails = Vue.ref("");
 
         const REASON_OPTIONS = [
-            { value: "Change class sched", label: "Change class sched (Pagbabago ng oras ng klase / subject)" },
-            { value: "Dissolve section", label: "Dissolve section (Na-dissolve o nalipat ang section)" },
+            { value: "Change class sched", label: "Change class sched (Class / subject schedule changed)" },
+            { value: "Dissolve section", label: "Dissolve section (Section dissolved or moved)" },
             { value: "Conflict with major subjects / laboratory", label: "Conflict with major subjects / laboratory" },
             { value: "Academic load adjustment (Add/Drop of subjects)", label: "Academic load adjustment (Add/Drop of subjects)" },
-            { value: "Change of duty availability", label: "Change of duty availability (Pagbabago ng available time)" },
-            { value: "Others", label: "Others (Iba pang dahilan...)" }
+            { value: "Change of duty availability", label: "Change of duty availability (Change in available hours)" },
+            { value: "Others", label: "Others (Other reason...)" }
         ];
 
         const minsToTime = m => {
@@ -347,7 +347,7 @@ const SaSchedulePage = {
 
         // Check if a class block has issues or overlaps with another class block
         const getClassBlockConflict = cb => {
-            if (!cb.day) return "Pumili ng araw para sa klase.";
+            if (!cb.day) return "Please select a day for the class.";
             if (!cb.subject || !cb.subject.trim()) return "Subject name is required.";
             if (!cb.startTime || !cb.endTime) return null;
             const sM = toMins(cb.startTime);
@@ -376,7 +376,7 @@ const SaSchedulePage = {
 
         // Check if a duty block conflicts with another duty block (same day overlap) or class schedule
         const getBlockConflict = b => {
-            if (!b.day) return "Pumili ng araw para sa duty.";
+            if (!b.day) return "Please select a day for duty.";
             if (!b.startTime || !b.endTime) return null;
             const sM = toMins(b.startTime);
             const eM = toMins(b.endTime);
@@ -388,7 +388,7 @@ const SaSchedulePage = {
                 return "Sunday schedule is restricted. Duty plotting is only allowed Monday to Saturday.";
             }
 
-            // Bawal ang nag-o-overlap na duty hours sa parehong araw
+            // Overlapping duty hours on the same day are prohibited
             for (let i = 0; i < plotBlocks.value.length; i++) {
                 const other = plotBlocks.value[i];
                 if (other === b) continue;
@@ -854,10 +854,10 @@ const SaSchedulePage = {
                 <div>
                     <div class="flex items-center gap-2">
                         <h3 class="text-body font-semibold text-blue-950">Plot Preferred Duty Schedule</h3>
-                        <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800 uppercase tracking-wide">Opsyonal</span>
+                        <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800 uppercase tracking-wide">Optional</span>
                     </div>
                     <p class="text-caption text-blue-800/90 mt-0.5">
-                        <b>Option lamang ito at HINDI mandatory:</b> Maaari kang mag-plot ng nais mong oras ng duty base sa iyong bakanteng oras. Kung hindi ka mag-plot, walang problema — awtomatiko ka pa ring ima-match ng system sa schedule ng department/rooms.
+                        <b>This is optional and NOT mandatory:</b> You may plot your preferred duty hours based on your free time. If you do not plot, no problem — the system will still automatically match you to department/room schedules.
                     </p>
                 </div>
             </div>

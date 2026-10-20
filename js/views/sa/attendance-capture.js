@@ -379,23 +379,23 @@ const SaAttendanceCapturePage = {
         };
 
         // ---------- Real-time Face Verification & Liveness Loop ----------
-        let eyeOpenFrames = 0;
-        let eyeClosedFrames = 0;
+        let openEyeBaseline = 0;
+        let eyeClosingFrames = 0;
+        let openEyeFrames = 0;
         let matchStartTime = 0;
         let lastFaceDetectedTime = 0;
         let recentEARs = [];
-        let recentYawRatios = [];
 
         const startFaceDetectionLoop = () => {
             if (faceDetectInterval) clearInterval(faceDetectInterval);
-            eyeOpenFrames = 0;
-            eyeClosedFrames = 0;
+            openEyeBaseline = 0;
+            eyeClosingFrames = 0;
+            openEyeFrames = 0;
             matchStartTime = 0;
             lastFaceDetectedTime = 0;
             recentEARs = [];
-            recentYawRatios = [];
 
-            // Run at ~120ms interval for responsive live blink and motion tracking
+            // Run at ~110ms interval for ultra-responsive live eye blink tracking
             faceDetectInterval = setInterval(async () => {
                 if (!isCameraActive.value || !faceVideoRef.value || faceVideoRef.value.paused || faceVideoRef.value.ended) {
                     return;
@@ -418,7 +418,7 @@ const SaAttendanceCapturePage = {
                             const currentDesc = Array.from(detection.descriptor);
                             currentDescriptor.value = currentDesc;
 
-                            // Calculate EAR on both eyes for liveness (anti-spoofing)
+                            // Calculate Eye Aspect Ratio (EAR) on both eyes for liveness (anti-spoofing)
                             const leftEye = detection.landmarks.getLeftEye();
                             const rightEye = detection.landmarks.getRightEye();
                             const leftEAR = computeEyeEAR(leftEye);
@@ -427,20 +427,7 @@ const SaAttendanceCapturePage = {
                             eyeAspectRatio.value = Math.round(avgEAR * 100) / 100;
 
                             recentEARs.push(avgEAR);
-                            if (recentEARs.length > 20) recentEARs.shift();
-
-                            // 3D Head Pose / Landmark Motion Tracking for Live Verification
-                            const positions = detection.landmarks.positions;
-                            if (positions && positions.length >= 31) {
-                                const noseTip = positions[30];
-                                const leftCorner = leftEye[0];
-                                const rightCorner = rightEye[3] || rightEye[0];
-                                const distLeftNose = getPtDist(leftCorner, noseTip);
-                                const distRightNose = getPtDist(rightCorner, noseTip);
-                                const yawRatio = Math.round((distLeftNose / (distRightNose || 1)) * 100) / 100;
-                                recentYawRatios.push(yawRatio);
-                                if (recentYawRatios.length > 20) recentYawRatios.shift();
-                            }
+                            if (recentEARs.length > 25) recentEARs.shift();
 
                             // Biometric Matching (SariSmarts FaceMatcher standard: threshold <= 0.50)
                             if (registeredDescriptor.value && registeredDescriptor.value.length === 128) {
@@ -459,48 +446,49 @@ const SaAttendanceCapturePage = {
 
                                     if (!matchStartTime) matchStartTime = now;
 
-                                    // ADAPTIVE LIVENESS CHECK (Anti-Photo & Anti-Screen Spoofing):
-                                    // Calculate the person's dynamic open-eye baseline from recent frames
-                                    const maxRecentEAR = recentEARs.length >= 3 ? Math.max(...recentEARs) : avgEAR;
-                                    const baselineOpenEAR = Math.max(0.18, maxRecentEAR);
+                                    // STRICT EYE BLINK LIVENESS VERIFICATION (Anti-Photo / Anti-Screen)
+                                    // A static photo or phone screen image CANNOT close its eyelids.
+                                    // Moving, shaking, or tilting a phone will NEVER trigger an eyelid closure.
 
-                                    // Dynamic Eye State:
-                                    // Eye is considered closed/blinking if EAR drops by >= 0.025 from baseline or avgEAR < 0.205
-                                    const isEyeClosing = avgEAR < 0.205 || (baselineOpenEAR - avgEAR) >= 0.025;
+                                    // 1. Dynamic open-eye baseline adaptation:
+                                    if (openEyeBaseline === 0) {
+                                        openEyeBaseline = Math.max(0.18, avgEAR);
+                                    } else if (avgEAR > openEyeBaseline * 0.90) {
+                                        openEyeBaseline = Math.max(openEyeBaseline, avgEAR);
+                                    }
 
-                                    if (isEyeClosing) {
-                                        eyeClosedFrames++;
-                                    } else {
-                                        // When eyes return to open after closing for 1-8 frames: Confirmed Blink!
-                                        if (eyeClosedFrames >= 1 && eyeClosedFrames <= 8) {
+                                    // 2. Physiological Blink Detection:
+                                    // A real human blink drops EAR by >= 15% from open baseline, or EAR drops by >= 0.025, or drops below 0.19
+                                    const dropFromBaseline = openEyeBaseline - avgEAR;
+                                    const relativeDrop = dropFromBaseline / (openEyeBaseline || 0.25);
+                                    const isEyesClosed = (relativeDrop >= 0.15 || dropFromBaseline >= 0.025 || avgEAR < 0.19);
+
+                                    if (isEyesClosed && openEyeFrames >= 2) {
+                                        // User had open eyes and is actively blinking/closing eyes
+                                        eyeClosingFrames++;
+                                    } else if (!isEyesClosed) {
+                                        // Eyes are open: check if the user just completed a valid physiological blink
+                                        if (eyeClosingFrames >= 1 && eyeClosingFrames <= 9) {
+                                            // Valid blink: closed for 1-9 frames (~100ms to 900ms) and now reopened!
                                             blinkDetected.value = true;
                                             blinkCount.value++;
                                             isLiveVerified.value = true;
                                             isStaticPhoto.value = false;
                                         }
-                                        eyeClosedFrames = 0;
-                                        eyeOpenFrames++;
+                                        eyeClosingFrames = 0;
+                                        openEyeFrames++;
                                     }
 
-                                    // Multi-factor motion fallback: Head micro-turn or nod (Natural 3D live movement)
-                                    if (!isLiveVerified.value && recentYawRatios.length >= 6) {
-                                        const yawSpread = Math.max(...recentYawRatios) - Math.min(...recentYawRatios);
-                                        if (yawSpread >= 0.12) {
-                                            isLiveVerified.value = true;
-                                            isStaticPhoto.value = false;
-                                        }
-                                    }
-
-                                    // Check status after evaluating frame
+                                    // 3. Status Evaluation
                                     if (isLiveVerified.value) {
                                         isStaticPhoto.value = false;
                                         hudMessage.value = `✓ Live Person Verified (${confidence}% match) — Ready`;
                                     } else {
                                         const elapsedMatch = now - matchStartTime;
-                                        if (elapsedMatch > 6000) {
-                                            // Suspected static photo: face matched for > 6s with zero blink or live motion
+                                        if (elapsedMatch > 4500) {
+                                            // Photo detected: face matched on camera for > 4.5s without any natural eyelid blink
                                             isStaticPhoto.value = true;
-                                            hudMessage.value = '⚠️ Static Photo Detected! Live capture required (Please blink or nod)';
+                                            hudMessage.value = '⚠️ Static Photo Detected! Live blink required';
                                         } else {
                                             isStaticPhoto.value = false;
                                             hudMessage.value = `Face Matched (${confidence}%) · Please blink your eyes to verify`;
@@ -511,6 +499,9 @@ const SaAttendanceCapturePage = {
                                     isLiveVerified.value = false;
                                     isStaticPhoto.value = false;
                                     matchStartTime = 0;
+                                    openEyeBaseline = 0;
+                                    eyeClosingFrames = 0;
+                                    openEyeFrames = 0;
                                     hudMessage.value = `Access Denied: Unregistered Face (${confidence}% match)`;
                                 }
                             } else {
@@ -522,16 +513,16 @@ const SaAttendanceCapturePage = {
                             faceDetected.value = false;
                             faceMatched.value = false;
                             
-                            // If face was lost for more than 2.0s, reset liveness
-                            if (now - lastFaceDetectedTime > 2000) {
+                            // If face was lost for more than 1.5s, reset liveness
+                            if (now - lastFaceDetectedTime > 1500) {
                                 isLiveVerified.value = false;
                                 isStaticPhoto.value = false;
                                 blinkDetected.value = false;
                                 matchStartTime = 0;
-                                eyeClosedFrames = 0;
-                                eyeOpenFrames = 0;
+                                openEyeBaseline = 0;
+                                eyeClosingFrames = 0;
+                                openEyeFrames = 0;
                                 recentEARs = [];
-                                recentYawRatios = [];
                             }
                             hudMessage.value = 'Align your face within the frame';
                         }
@@ -541,7 +532,7 @@ const SaAttendanceCapturePage = {
                 } finally {
                     isFaceDetecting.value = false;
                 }
-            }, 120);
+            }, 110);
         };
 
         // ---------- Attendance Submission with Live Frame Instant Check (SariSmarts Parity) ----------
@@ -1102,7 +1093,7 @@ const SaAttendanceCapturePage = {
                             <div v-else-if="faceMatched && !isLiveVerified" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/60 text-amber-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(245,158,11,0.3)] backdrop-blur-md">
                                 <span class="h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
-                                <span>Live Check: Please blink your eyes or nod</span>
+                                <span>Live Check: Please blink your eyes</span>
                             </div>
                             <div v-else-if="faceDetected" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/90 border border-rose-500/60 text-rose-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(244,63,94,0.3)] backdrop-blur-md">
@@ -1208,7 +1199,7 @@ const SaAttendanceCapturePage = {
                             🚫 Static Photo Detected (Attendance Locked)
                         </span>
                         <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
-                            👁️ Please blink or nod to unlock
+                            👁️ Please blink eyes to unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)
@@ -1240,7 +1231,7 @@ const SaAttendanceCapturePage = {
                             🚫 Static Photo Detected (Attendance Locked)
                         </span>
                         <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
-                            👁️ Please blink or nod to unlock
+                            👁️ Please blink eyes to unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)

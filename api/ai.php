@@ -183,13 +183,15 @@ DISCIPLINARY POLICY SUMMARY:
 - Dress Code Violation: 2 allowed chances.
 - Escalation: 1st Warning -> 2nd Warning -> 3rd Warning (with official memo issued to S.A. and parent/guardian).";
 
-        // Check if user has Gemini API Key in settings
-        $geminiKey = null;
-        try {
-            $stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'gemini_api_key' LIMIT 1");
-            $stmt->execute();
-            $geminiKey = trim($stmt->fetchColumn() ?: '');
-        } catch (Throwable $e) {}
+        // Check if user has Gemini API Key in settings or environment
+        $geminiKey = getenv('GEMINI_API_KEY') ? trim((string) getenv('GEMINI_API_KEY')) : null;
+        if (empty($geminiKey)) {
+            try {
+                $stmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'gemini_api_key' LIMIT 1");
+                $stmt->execute();
+                $geminiKey = trim($stmt->fetchColumn() ?: '');
+            } catch (Throwable $e) {}
+        }
 
         $reply = null;
         $usedProvider = 'FREE_AI';

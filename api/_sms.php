@@ -81,6 +81,14 @@ function get_sms_config(): array
         }
     } catch (Throwable $e) {}
 
+    // Allow environment variable overrides (e.g. Render env vars)
+    foreach ($defaults as $k => $v) {
+        $envVal = getenv(strtoupper($k));
+        if ($envVal !== false && trim((string)$envVal) !== '') {
+            $defaults[$k] = trim((string)$envVal);
+        }
+    }
+
     $config = $defaults;
     return $config;
 }

@@ -15,10 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Enable Apache mod_rewrite and mod_headers
 RUN a2enmod rewrite headers
 
-# Configure Apache to bind to PORT dynamically (Render assigns PORT env var)
-# and enable AllowOverride All for .htaccess
-RUN sed -ri -e 's!80!${PORT:-80}!g' /etc/apache2/ports.conf /etc/apache2/sites-available/*.conf \
-    && sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+# Enable AllowOverride All for .htaccess
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+
+# Copy entrypoint script to handle dynamic PORT binding at runtime (e.g. on Render)
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh
 
 # Set working directory and copy application
 WORKDIR /var/www/html
@@ -30,5 +33,5 @@ RUN chown -R www-data:www-data /var/www/html/uploads \
 
 EXPOSE 80
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
-

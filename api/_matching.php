@@ -465,6 +465,66 @@ function eligible_for(array $sa, string $departmentType, ?int $officeId = null, 
     return $cat === $dept;
 }
 
+function fetch_match_slots_with_candidates(PDO $pdo, int $runId, string $extraWhere = '', array $extraParams = []): array
+{
+    $sql = '
+        SELECT ms.id, ms.id AS slot_id, ms.slot_no, ms.room_requirement_id, ms.department, ms.label,
+               ms.status, ms.decision, ms.assigned_sa_profile_id, rq.room
+          FROM match_slots ms
+          LEFT JOIN room_requirements rq ON rq.id = ms.room_requirement_id
+         WHERE ms.run_id = ? ' . $extraWhere . '
+         ORDER BY ms.slot_no ASC, ms.id ASC
+    ';
+    $params = array_merge([$runId], $extraParams);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $slots = $stmt->fetchAll();
+    if (empty($slots)) {
+        return [];
+    }
+
+    $slotIds = array_map('intval', array_column($slots, 'id'));
+    $inClause = implode(',', array_fill(0, count($slotIds), '?'));
+    $candStmt = $pdo->prepare("
+        SELECT slot_id, sa_profile_id, rank_no, duty_pattern, checks
+          FROM match_candidates
+         WHERE slot_id IN ({$inClause})
+         ORDER BY rank_no ASC
+    ");
+    $candStmt->execute($slotIds);
+    $candsBySlot = [];
+    foreach ($candStmt->fetchAll() as $c) {
+        $candsBySlot[(int)$c['slot_id']][] = $c;
+    }
+
+    $result = [];
+    foreach ($slots as $s) {
+        $slotId = (int) $s['id'];
+        $candList = $candsBySlot[$slotId] ?? [];
+        $assignedSaId = (int) ($s['assigned_sa_profile_id'] ?? 0);
+
+        $chosenCand = null;
+        if ($assignedSaId > 0) {
+            foreach ($candList as $c) {
+                if ((int)$c['sa_profile_id'] === $assignedSaId) {
+                    $chosenCand = $c;
+                    break;
+                }
+            }
+        }
+        if (!$chosenCand && !empty($candList)) {
+            $chosenCand = $candList[0];
+        }
+
+        $s['cand_sa_id'] = $chosenCand ? (int)$chosenCand['sa_profile_id'] : null;
+        $s['top_sa_id'] = $chosenCand ? (int)$chosenCand['sa_profile_id'] : null;
+        $s['duty_pattern'] = $chosenCand ? $chosenCand['duty_pattern'] : null;
+        $s['checks'] = $chosenCand ? $chosenCand['checks'] : null;
+        $result[] = $s;
+    }
+    return $result;
+}
+
 function ensure_matching_board_tables(): void
 {
     global $pdo;
@@ -2798,20 +2858,12 @@ function run_matching(int $semesterId, int $userId, string $mode = 'standard', b
     $prevRunId = $prevRunRow ? (int) $prevRunRow['id'] : 0;
 
     if ($prevRunId) {
-        $prevSlotStmt = $pdo->prepare(
-            'SELECT ms.id, ms.slot_no, ms.department, ms.label, ms.decision, ms.assigned_sa_profile_id,
-                    rq.room, mc.sa_profile_id AS top_sa_id, mc.duty_pattern
-               FROM match_slots ms
-               LEFT JOIN room_requirements rq ON rq.id = ms.room_requirement_id
-               LEFT JOIN match_candidates mc ON mc.slot_id = ms.id
-                     AND mc.sa_profile_id = COALESCE(ms.assigned_sa_profile_id, (
-                         SELECT mc2.sa_profile_id FROM match_candidates mc2 WHERE mc2.slot_id = ms.id ORDER BY mc2.rank_no ASC LIMIT 1
-                     ))
-              WHERE ms.run_id = ? AND ms.requirement_type = "ROOM" AND ms.slot_no < 10
-              ORDER BY ms.id ASC'
+        $prevSlots = fetch_match_slots_with_candidates(
+            $pdo,
+            $prevRunId,
+            'AND ms.requirement_type = "ROOM" AND ms.slot_no < 10'
         );
-        $prevSlotStmt->execute([$prevRunId]);
-        foreach ($prevSlotStmt as $ps) {
+        foreach ($prevSlots as $ps) {
             $rName = $ps['room'] ?: preg_replace('/\s*—\s*(Partner\s+\d+|ITO\s+Reliever.*)$/i', '', $ps['label']);
             $saId = (int) ($ps['assigned_sa_profile_id'] ?: $ps['top_sa_id'] ?: 0);
             $pat = json_decode($ps['duty_pattern'] ?? '[]', true) ?: [];
@@ -3551,19 +3603,11 @@ function reconcile_matching_with_live_data(int $semesterId): ?array
         $postsByRoom[$p['room']] = $p;
     }
 
-    $slotStmt = $pdo->prepare(
-        'SELECT ms.id, ms.slot_no, ms.department, ms.label, ms.status, ms.decision, ms.assigned_sa_profile_id,
-                rq.room, mc.sa_profile_id AS top_sa_id, mc.duty_pattern, mc.checks
-           FROM match_slots ms
-           LEFT JOIN room_requirements rq ON rq.id = ms.room_requirement_id
-           LEFT JOIN match_candidates mc ON mc.slot_id = ms.id
-                 AND mc.sa_profile_id = COALESCE(ms.assigned_sa_profile_id, (
-                     SELECT mc2.sa_profile_id FROM match_candidates mc2 WHERE mc2.slot_id = ms.id ORDER BY mc2.rank_no ASC LIMIT 1
-                 ))
-          WHERE ms.run_id = ? AND ms.requirement_type = "ROOM" AND ms.slot_no < 10'
+    $slotRows = fetch_match_slots_with_candidates(
+        $pdo,
+        $runId,
+        'AND ms.requirement_type = "ROOM" AND ms.slot_no < 10'
     );
-    $slotStmt->execute([$runId]);
-    $slotRows = $slotStmt->fetchAll();
 
     $slotsByRoom = [];
     foreach ($slotRows as $sr) {
@@ -4115,24 +4159,34 @@ function sync_approved_to_assignments(int $semesterId): int
     $manualStmt->execute([$semesterId]);
     $manualRoomSaIds = array_map('intval', $manualStmt->fetchAll(PDO::FETCH_COLUMN));
 
-    $stmt = $pdo->prepare(
-        'SELECT ms.id AS slot_id, ms.slot_no, ms.room_requirement_id, ms.department, ms.label, ms.assigned_sa_profile_id,
-                rq.room, mc.sa_profile_id AS cand_sa_id, mc.duty_pattern
-           FROM match_slots ms
-           LEFT JOIN room_requirements rq ON rq.id = ms.room_requirement_id
-           LEFT JOIN match_candidates mc ON mc.slot_id = ms.id
-                 AND mc.sa_profile_id = COALESCE(ms.assigned_sa_profile_id, (
-                     SELECT mc2.sa_profile_id FROM match_candidates mc2 WHERE mc2.slot_id = ms.id ORDER BY mc2.rank_no ASC LIMIT 1
-                 ))
-           JOIN sa_profiles p ON p.id = COALESCE(ms.assigned_sa_profile_id, mc.sa_profile_id)
-          WHERE ms.run_id = ? AND ms.requirement_type = "ROOM"
-            AND ms.status = "RECOMMENDED"
-            AND ms.decision IN ("ACCEPTED", "OVERRIDDEN")
-            AND p.sa_status = "ACTIVE" AND p.archived_at IS NULL
-          ORDER BY ms.slot_no ASC'
+    $rawSlots = fetch_match_slots_with_candidates(
+        $pdo,
+        $runId,
+        'AND ms.requirement_type = "ROOM" AND ms.status = "RECOMMENDED" AND ms.decision IN ("ACCEPTED", "OVERRIDDEN")'
     );
-    $stmt->execute([$runId]);
-    $rows = $stmt->fetchAll();
+
+    $rows = [];
+    if (!empty($rawSlots)) {
+        $saIdsToCheck = [];
+        foreach ($rawSlots as $s) {
+            $saId = (int) ($s['assigned_sa_profile_id'] ?: $s['cand_sa_id'] ?: 0);
+            if ($saId > 0) $saIdsToCheck[] = $saId;
+        }
+        $activeSaIds = [];
+        if (!empty($saIdsToCheck)) {
+            $saIdsToCheck = array_values(array_unique($saIdsToCheck));
+            $inClauseSa = implode(',', array_fill(0, count($saIdsToCheck), '?'));
+            $actStmt = $pdo->prepare("SELECT id FROM sa_profiles WHERE id IN ({$inClauseSa}) AND sa_status = 'ACTIVE' AND archived_at IS NULL");
+            $actStmt->execute($saIdsToCheck);
+            $activeSaIds = array_flip(array_map('intval', $actStmt->fetchAll(PDO::FETCH_COLUMN)));
+        }
+        foreach ($rawSlots as $s) {
+            $saId = (int) ($s['assigned_sa_profile_id'] ?: $s['cand_sa_id'] ?: 0);
+            if ($saId > 0 && isset($activeSaIds[$saId])) {
+                $rows[] = $s;
+            }
+        }
+    }
 
     $desiredRows = [];
     $desiredKeys = [];

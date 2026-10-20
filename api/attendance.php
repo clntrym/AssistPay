@@ -632,6 +632,13 @@ switch ($action) {
         }
 
         // Validate Live Face Biometrics (SariSmart standard: FaceMatcher threshold <= 0.50)
+        $isLive = !empty(input()['isLive']);
+        if (!$isLive) {
+            fail('Live biometric verification failed. Static photos or screen pictures are strictly prohibited. Attendance requires live human verification.', 403, [
+                'livenessFailed' => true
+            ]);
+        }
+
         $liveDescriptor = input()['descriptor'] ?? null;
         if (empty($liveDescriptor)) {
             fail('Live facial biometric descriptor is required. Please capture your face using the camera.', 422);

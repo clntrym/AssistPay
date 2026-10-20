@@ -119,6 +119,13 @@ const SaAttendanceCapturePage = {
         const hudMessage = Vue.ref('Align your face within the frame');
         const lastSnapshot = Vue.ref('');
 
+        // Anti-Spoofing & Liveness State (Strict Live Person Verification - Anti-Photo)
+        const isLiveVerified = Vue.ref(false);
+        const isStaticPhoto = Vue.ref(false);
+        const blinkDetected = Vue.ref(false);
+        const blinkCount = Vue.ref(0);
+        const eyeAspectRatio = Vue.ref(0);
+
         let faceDetectInterval = null;
         let webcamStream = null;
         let modelsLoaded = false;
@@ -196,9 +203,9 @@ const SaAttendanceCapturePage = {
             return distanceToActiveLocation.value <= maxRadiusMeters.value;
         });
 
-        // Can the user log attendance right now? (Requires Geofence + Verified Face Match)
+        // Can the user log attendance right now? (Requires Geofence + Verified Face Match + Verified Live Person)
         const canSubmitAttendance = Vue.computed(() => {
-            return isWithinGeofence.value && faceMatched.value && !submitting.value;
+            return isWithinGeofence.value && faceMatched.value && isLiveVerified.value && !submitting.value;
         });
 
         // ---------- Geolocation Setup ----------
@@ -306,6 +313,10 @@ const SaAttendanceCapturePage = {
             isCameraActive.value = false;
             faceDetected.value = false;
             faceMatched.value = false;
+            isLiveVerified.value = false;
+            isStaticPhoto.value = false;
+            blinkDetected.value = false;
+            blinkCount.value = 0;
             hudMessage.value = 'Camera is currently closed';
         };
 
@@ -313,6 +324,10 @@ const SaAttendanceCapturePage = {
             cameraError.value = '';
             faceDetected.value = false;
             faceMatched.value = false;
+            isLiveVerified.value = false;
+            isStaticPhoto.value = false;
+            blinkDetected.value = false;
+            blinkCount.value = 0;
             hudMessage.value = 'Requesting camera access...';
 
             const ok = await loadFaceModels();
@@ -349,10 +364,36 @@ const SaAttendanceCapturePage = {
             }
         };
 
-        // ---------- Real-time Face Verification Loop (SariSmarts Parity) ----------
+        // Helper to compute Euclidean distance between two 2D points (supports .x or ._x)
+        const getPtX = (p) => (p && (p.x !== undefined ? p.x : p._x)) || 0;
+        const getPtY = (p) => (p && (p.y !== undefined ? p.y : p._y)) || 0;
+        const getPtDist = (p1, p2) => Math.hypot(getPtX(p1) - getPtX(p2), getPtY(p1) - getPtY(p2));
+
+        // Eye Aspect Ratio (EAR) for Live Human Blink Detection
+        const computeEyeEAR = (pts) => {
+            if (!pts || pts.length < 6) return 0.3;
+            const v1 = getPtDist(pts[1], pts[5]);
+            const v2 = getPtDist(pts[2], pts[4]);
+            const h = getPtDist(pts[0], pts[3]);
+            return h > 0 ? (v1 + v2) / (2.0 * h) : 0.3;
+        };
+
+        // ---------- Real-time Face Verification & Liveness Loop ----------
+        let eyeOpenFrames = 0;
+        let eyeClosedFrames = 0;
+        let matchStartTime = 0;
+        let lastFaceDetectedTime = 0;
+        let recentEARs = [];
+
         const startFaceDetectionLoop = () => {
             if (faceDetectInterval) clearInterval(faceDetectInterval);
+            eyeOpenFrames = 0;
+            eyeClosedFrames = 0;
+            matchStartTime = 0;
+            lastFaceDetectedTime = 0;
+            recentEARs = [];
 
+            // Run at ~130ms interval for responsive live blink tracking
             faceDetectInterval = setInterval(async () => {
                 if (!isCameraActive.value || !faceVideoRef.value || faceVideoRef.value.paused || faceVideoRef.value.ended) {
                     return;
@@ -360,40 +401,107 @@ const SaAttendanceCapturePage = {
                 if (isFaceDetecting.value) return;
 
                 isFaceDetecting.value = true;
+                const now = Date.now();
                 try {
                     const videoEl = faceVideoRef.value;
                     if (videoEl && videoEl.readyState >= 2) {
-                        const opt = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.45 });
+                        const opt = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.45 });
                         const detection = await faceapi.detectSingleFace(videoEl, opt)
                             .withFaceLandmarks()
                             .withFaceDescriptor();
 
-                        if (detection && detection.descriptor) {
+                        if (detection && detection.descriptor && detection.landmarks) {
+                            lastFaceDetectedTime = now;
                             faceDetected.value = true;
                             const currentDesc = Array.from(detection.descriptor);
                             currentDescriptor.value = currentDesc;
 
-                            // Biometric Matching (SariSmarts standard: threshold <= 0.50)
+                            // Calculate EAR on both eyes for liveness (anti-spoofing)
+                            const leftEye = detection.landmarks.getLeftEye();
+                            const rightEye = detection.landmarks.getRightEye();
+                            const leftEAR = computeEyeEAR(leftEye);
+                            const rightEAR = computeEyeEAR(rightEye);
+                            const avgEAR = (leftEAR + rightEAR) / 2.0;
+                            eyeAspectRatio.value = Math.round(avgEAR * 100) / 100;
+
+                            recentEARs.push(avgEAR);
+                            if (recentEARs.length > 25) recentEARs.shift();
+
+                            // Biometric Matching (threshold <= 0.50)
                             if (registeredDescriptor.value && registeredDescriptor.value.length === 128) {
                                 const dist = faceapi.euclideanDistance(registeredDescriptor.value, currentDesc);
                                 const confidence = Math.max(0, Math.min(100, Math.round((1 - (dist / 0.70)) * 100)));
                                 faceMatchConfidence.value = confidence;
 
-                                // If matches registered SA (dist <= 0.50)
                                 if (dist <= 0.50) {
                                     faceMatched.value = true;
-                                    hudMessage.value = `Face Verified (${confidence}% match) — Ready`;
+
+                                    if (!matchStartTime) matchStartTime = now;
+
+                                    // LIVENESS CHECK (Anti-Photo / Live Eye Blink Verification):
+                                    // A static photo or screen picture has fixed, unchanging eyes.
+                                    // A live human blinks: EAR transitions Open (>=0.22) -> Closed (<0.19) -> Open (>=0.22).
+                                    if (avgEAR >= 0.22) {
+                                        if (eyeClosedFrames >= 1 && eyeClosedFrames <= 7 && eyeOpenFrames >= 1) {
+                                            // Valid dynamic blink detected!
+                                            blinkDetected.value = true;
+                                            blinkCount.value++;
+                                            isLiveVerified.value = true;
+                                            isStaticPhoto.value = false;
+                                            eyeClosedFrames = 0;
+                                            eyeOpenFrames = 1;
+                                            hudMessage.value = `✓ Live Person Verified (${confidence}% match) — Ready`;
+                                        } else {
+                                            eyeOpenFrames++;
+                                            if (eyeClosedFrames > 7) {
+                                                eyeClosedFrames = 0; // Eye closed too long (e.g. photo with closed eyes)
+                                            }
+                                        }
+                                    } else if (avgEAR < 0.19) {
+                                        // Eyes in closed / blinking state
+                                        eyeClosedFrames++;
+                                    }
+
+                                    // Check status after evaluating frame
+                                    if (isLiveVerified.value) {
+                                        hudMessage.value = `✓ Live Person Verified (${confidence}% match) — Ready`;
+                                    } else {
+                                        const elapsedMatch = now - matchStartTime;
+                                        if (elapsedMatch > 2400) {
+                                            // Suspected photo: face matched for > 2.4s without any blink
+                                            isStaticPhoto.value = true;
+                                            hudMessage.value = '⚠️ Static Photo Detected! Live capture required (Please blink)';
+                                        } else {
+                                            isStaticPhoto.value = false;
+                                            hudMessage.value = `Face Matched (${confidence}%) · 👁️ Paki-kurap ang iyong mata (Blink)`;
+                                        }
+                                    }
                                 } else {
                                     faceMatched.value = false;
+                                    isLiveVerified.value = false;
+                                    isStaticPhoto.value = false;
+                                    matchStartTime = 0;
                                     hudMessage.value = `Access Denied: Unregistered Face (${confidence}% match)`;
                                 }
                             } else {
                                 faceMatched.value = false;
+                                isLiveVerified.value = false;
                                 hudMessage.value = 'Face detected (No biometric profile registered yet)';
                             }
                         } else {
                             faceDetected.value = false;
                             faceMatched.value = false;
+                            
+                            // If face was lost for more than 1.5s, reset liveness so nobody can substitute a photo
+                            if (now - lastFaceDetectedTime > 1500) {
+                                isLiveVerified.value = false;
+                                isStaticPhoto.value = false;
+                                blinkDetected.value = false;
+                                matchStartTime = 0;
+                                eyeClosedFrames = 0;
+                                eyeOpenFrames = 0;
+                                recentEARs = [];
+                            }
                             hudMessage.value = 'Align your face within the frame';
                         }
                     }
@@ -402,7 +510,7 @@ const SaAttendanceCapturePage = {
                 } finally {
                     isFaceDetecting.value = false;
                 }
-            }, 250);
+            }, 130);
         };
 
         // ---------- Attendance Submission with Live Frame Instant Check (SariSmarts Parity) ----------
@@ -424,7 +532,17 @@ const SaAttendanceCapturePage = {
             // 2. Check Camera & Face Verification
             if (!isCameraActive.value) {
                 await startCamera();
-                Alerts.toast('info', 'Activating camera. Look at the camera to verify your identity.');
+                Alerts.toast('info', 'Activating camera. Look at the camera and blink to verify your live identity.');
+                return;
+            }
+
+            // 2.5 Strict Liveness Verification Check (Anti-Photo Enforcement)
+            if (!isLiveVerified.value) {
+                Alerts.warning(
+                    'Live Face Capture Required',
+                    'Bawal ang litrato, ID picture, o photo sa phone screen! Kailangan ay live capture ng mukha. Paki-tingin sa camera at kumurap (blink) para makumpirmang live person bago mag-record ng attendance.'
+                );
+                hudMessage.value = '⚠️ Live Capture Required: Paki-kurap ang iyong mata';
                 return;
             }
 
@@ -703,6 +821,7 @@ const SaAttendanceCapturePage = {
             faceVideoRef, isCameraActive, isModelLoading, cameraError,
             hasRegisteredFace, registeredDescriptor,
             faceDetected, faceMatched, faceMatchConfidence, hudMessage,
+            isLiveVerified, isStaticPhoto, blinkDetected, blinkCount, eyeAspectRatio,
             startCamera, stopCamera, logAttendance, lastSnapshot,
             calculateDistance, getDistanceToLoc, isLocWithinRadius, formatCoord,
             selectLocation,
@@ -933,10 +1052,20 @@ const SaAttendanceCapturePage = {
 
                         <!-- Top Floating HUD: Real-time Biometrics Verification Badge -->
                         <div v-if="isCameraActive" class="absolute top-3 left-3 sm:top-4 sm:left-4 z-20 flex flex-wrap items-center gap-2 pointer-events-none">
-                            <div v-if="faceMatched" 
+                            <div v-if="faceMatched && isLiveVerified" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-950/90 border border-emerald-500/60 text-emerald-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(16,185,129,0.3)] backdrop-blur-md">
                                 <app-icon name="ShieldCheck" :size="14" class="text-emerald-400" />
-                                <span>Face Verified ({{ faceMatchConfidence }}%)</span>
+                                <span>Live Verified (Real Person • {{ faceMatchConfidence }}%)</span>
+                            </div>
+                            <div v-else-if="faceMatched && isStaticPhoto" 
+                                 class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/90 border border-rose-500/70 text-rose-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_20px_rgba(244,63,94,0.5)] backdrop-blur-md animate-pulse">
+                                <app-icon name="CircleAlert" :size="14" class="text-rose-400" />
+                                <span>⚠️ Photo Detected: Bawal ang Litrato!</span>
+                            </div>
+                            <div v-else-if="faceMatched && !isLiveVerified" 
+                                 class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/60 text-amber-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(245,158,11,0.3)] backdrop-blur-md">
+                                <span class="h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
+                                <span>Live Check: Paki-kurap ang iyong mata (Blink)</span>
                             </div>
                             <div v-else-if="faceDetected" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/90 border border-rose-500/60 text-rose-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(244,63,94,0.3)] backdrop-blur-md">
@@ -950,32 +1079,45 @@ const SaAttendanceCapturePage = {
 
                         <!-- Center Biometric Alignment Oval Guide -->
                         <div v-if="isCameraActive" class="pointer-events-none absolute inset-0 m-auto w-48 sm:w-56 h-64 sm:h-76 rounded-full border-2 transition-all duration-300 z-10 flex items-center justify-center biometric-reticle"
-                             :class="faceMatched 
+                             :class="faceMatched && isLiveVerified 
                                  ? 'border-emerald-400 shadow-[0_0_35px_rgba(52,211,153,0.6)] bg-emerald-500/10' 
-                                 : (faceDetected 
-                                     ? 'border-rose-500 shadow-[0_0_25px_rgba(244,63,94,0.5)] bg-rose-500/5' 
-                                     : 'border-dashed border-cyan-400/70 shadow-[0_0_20px_rgba(6,182,212,0.25)] bg-cyan-500/5')">
-                            <div class="w-3 h-3 rounded-full" 
-                                 :class="faceMatched ? 'bg-emerald-400 animate-ping' : (faceDetected ? 'bg-rose-500' : 'bg-cyan-400/40')"></div>
+                                 : (faceMatched && isStaticPhoto
+                                     ? 'border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.6)] bg-rose-500/10 animate-pulse'
+                                     : (faceMatched
+                                         ? 'border-amber-400/80 shadow-[0_0_25px_rgba(251,191,36,0.5)] bg-amber-500/5'
+                                         : (faceDetected 
+                                             ? 'border-rose-500 shadow-[0_0_25px_rgba(244,63,94,0.5)] bg-rose-500/5' 
+                                             : 'border-dashed border-cyan-400/70 shadow-[0_0_20px_rgba(6,182,212,0.25)] bg-cyan-500/5')))">
+                            <div class="w-3.5 h-3.5 rounded-full" 
+                                 :class="faceMatched && isLiveVerified 
+                                     ? 'bg-emerald-400 animate-ping' 
+                                     : (faceMatched && isStaticPhoto
+                                         ? 'bg-rose-500' 
+                                         : (faceMatched ? 'bg-amber-400 animate-bounce' : (faceDetected ? 'bg-rose-500' : 'bg-cyan-400/40')))"></div>
                         </div>
 
                         <!-- Bottom HUD Pill with Pagination Dots (Matching Image 2) -->
-                        <div v-if="isCameraActive" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-20 pointer-events-none">
-                            <div class="flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-950/85 backdrop-blur-md border text-[11px] sm:text-[13px] font-mono shadow-2xl transition-colors duration-200"
-                                 :class="faceMatched 
-                                     ? 'border-emerald-500/60 text-emerald-300 bg-emerald-950/80 shadow-[0_0_20px_rgba(52,211,153,0.3)]' 
-                                     : (faceDetected 
-                                         ? 'border-rose-500/50 text-rose-200 bg-slate-950/85' 
-                                         : 'border-cyan-500/40 text-cyan-200 bg-slate-950/85')">
-                                <app-icon :name="faceMatched ? 'Check' : (faceDetected ? 'CircleAlert' : 'Scan')" :size="15" 
-                                          :class="faceMatched ? 'text-emerald-400' : (faceDetected ? 'text-rose-400' : 'text-cyan-400')" />
+                        <div v-if="isCameraActive" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 z-20 pointer-events-none w-[90%] max-w-md">
+                            <div class="flex items-center justify-center text-center gap-2 px-4 py-1.5 rounded-full bg-slate-950/90 backdrop-blur-md border text-[11px] sm:text-[13px] font-mono shadow-2xl transition-colors duration-200"
+                                 :class="faceMatched && isLiveVerified 
+                                     ? 'border-emerald-500/60 text-emerald-300 bg-emerald-950/85 shadow-[0_0_20px_rgba(52,211,153,0.3)]' 
+                                     : (faceMatched && isStaticPhoto
+                                         ? 'border-rose-500/70 text-rose-200 bg-rose-950/90 shadow-[0_0_20px_rgba(244,63,94,0.4)]'
+                                         : (faceMatched
+                                             ? 'border-amber-500/60 text-amber-200 bg-amber-950/85 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                                             : (faceDetected 
+                                                 ? 'border-rose-500/50 text-rose-200 bg-slate-950/85' 
+                                                 : 'border-cyan-500/40 text-cyan-200 bg-slate-950/85')))">
+                                <app-icon :name="faceMatched && isLiveVerified ? 'Check' : (faceMatched && isStaticPhoto ? 'CircleAlert' : (faceMatched ? 'Eye' : (faceDetected ? 'CircleAlert' : 'Scan')))" :size="15" 
+                                          :class="faceMatched && isLiveVerified ? 'text-emerald-400' : (faceMatched && isStaticPhoto ? 'text-rose-400' : (faceMatched ? 'text-amber-400 animate-pulse' : (faceDetected ? 'text-rose-400' : 'text-cyan-400')))" />
                                 <span>{{ hudMessage }}</span>
                             </div>
 
                             <!-- Pagination / Scan Step Dots -->
                             <div class="flex items-center gap-1">
                                 <span class="h-1.5 w-1.5 rounded-full" :class="faceDetected ? 'bg-cyan-400' : 'bg-cyan-400/20'"></span>
-                                <span class="h-1.5 w-1.5 rounded-full" :class="faceMatched ? 'bg-emerald-400' : 'bg-cyan-400/40'"></span>
+                                <span class="h-1.5 w-1.5 rounded-full" :class="faceMatched ? 'bg-amber-400' : 'bg-cyan-400/40'"></span>
+                                <span class="h-1.5 w-1.5 rounded-full" :class="faceMatched && isLiveVerified ? 'bg-emerald-400' : 'bg-cyan-400/40'"></span>
                             </div>
                         </div>
 
@@ -1022,8 +1164,14 @@ const SaAttendanceCapturePage = {
                             <app-icon name="Clock" :size="12" />
                             <span>Sched Time In: {{ todayDuty.expectedCheckIn }}</span>
                         </div>
-                        <span v-if="isCameraActive && faceMatched" class="text-[11px] text-emerald-400 font-mono mt-1">
-                            ✓ Face Verified ({{ faceMatchConfidence }}%) — Ready
+                        <span v-if="isCameraActive && faceMatched && isLiveVerified" class="text-[11px] text-emerald-400 font-mono mt-1 font-bold">
+                            ✓ Live Person Verified ({{ faceMatchConfidence }}%) — Ready
+                        </span>
+                        <span v-else-if="isCameraActive && faceMatched && isStaticPhoto" class="text-[11px] text-rose-400 font-mono mt-1 font-bold">
+                            🚫 Static Photo Detected (Attendance Locked)
+                        </span>
+                        <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
+                            👁️ Paki-kurap ang mata para mag-unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)
@@ -1048,8 +1196,14 @@ const SaAttendanceCapturePage = {
                             <app-icon name="Clock" :size="12" />
                             <span>Sched Time Out: {{ todayDuty.expectedCheckOut }}</span>
                         </div>
-                        <span v-if="isCameraActive && faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
-                            ✓ Face Verified ({{ faceMatchConfidence }}%) — Ready
+                        <span v-if="isCameraActive && faceMatched && isLiveVerified" class="text-[11px] text-rose-400 font-mono mt-1 font-bold">
+                            ✓ Live Person Verified ({{ faceMatchConfidence }}%) — Ready
+                        </span>
+                        <span v-else-if="isCameraActive && faceMatched && isStaticPhoto" class="text-[11px] text-rose-400 font-mono mt-1 font-bold">
+                            🚫 Static Photo Detected (Attendance Locked)
+                        </span>
+                        <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
+                            👁️ Paki-kurap ang mata para mag-unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)

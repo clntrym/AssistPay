@@ -31,3 +31,4 @@ RUN chown -R www-data:www-data /var/www/html/uploads \
 EXPOSE 80
 
 CMD ["apache2-foreground"]
+

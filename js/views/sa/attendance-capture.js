@@ -427,13 +427,19 @@ const SaAttendanceCapturePage = {
                             recentEARs.push(avgEAR);
                             if (recentEARs.length > 25) recentEARs.shift();
 
-                            // Biometric Matching (threshold <= 0.50)
+                            // Biometric Matching (SariSmarts FaceMatcher standard: threshold <= 0.50)
                             if (registeredDescriptor.value && registeredDescriptor.value.length === 128) {
-                                const dist = faceapi.euclideanDistance(registeredDescriptor.value, currentDesc);
+                                const labeled = new faceapi.LabeledFaceDescriptors(
+                                    "StudentAssistant",
+                                    [new Float32Array(registeredDescriptor.value)]
+                                );
+                                const matcher = new faceapi.FaceMatcher(labeled, 0.50);
+                                const matchResult = matcher.findBestMatch(new Float32Array(currentDesc));
+                                const dist = matchResult.distance;
                                 const confidence = Math.max(0, Math.min(100, Math.round((1 - (dist / 0.70)) * 100)));
                                 faceMatchConfidence.value = confidence;
 
-                                if (dist <= 0.50) {
+                                if (matchResult.label !== "unknown") {
                                     faceMatched.value = true;
 
                                     if (!matchStartTime) matchStartTime = now;
@@ -473,7 +479,7 @@ const SaAttendanceCapturePage = {
                                             hudMessage.value = '⚠️ Static Photo Detected! Live capture required (Please blink)';
                                         } else {
                                             isStaticPhoto.value = false;
-                                            hudMessage.value = `Face Matched (${confidence}%) · 👁️ Paki-kurap ang iyong mata (Blink)`;
+                                            hudMessage.value = `Face Matched (${confidence}%) · 👁️ Please blink your eyes to verify`;
                                         }
                                     }
                                 } else {
@@ -540,9 +546,9 @@ const SaAttendanceCapturePage = {
             if (!isLiveVerified.value) {
                 Alerts.warning(
                     'Live Face Capture Required',
-                    'Bawal ang litrato, ID picture, o photo sa phone screen! Kailangan ay live capture ng mukha. Paki-tingin sa camera at kumurap (blink) para makumpirmang live person bago mag-record ng attendance.'
+                    'Static photos, printed pictures, and screen displays are strictly prohibited! Real-time live human presence is required. Please look at the camera and blink your eyes to verify before logging attendance.'
                 );
-                hudMessage.value = '⚠️ Live Capture Required: Paki-kurap ang iyong mata';
+                hudMessage.value = '⚠️ Live Capture Required: Please blink your eyes';
                 return;
             }
 
@@ -571,11 +577,17 @@ const SaAttendanceCapturePage = {
             }
 
             const liveDesc = Array.from(liveDetection.descriptor);
-            const dist = faceapi.euclideanDistance(registeredDescriptor.value, liveDesc);
+            const labeled = new faceapi.LabeledFaceDescriptors(
+                "StudentAssistant",
+                [new Float32Array(registeredDescriptor.value)]
+            );
+            const matcher = new faceapi.FaceMatcher(labeled, 0.50);
+            const matchResult = matcher.findBestMatch(new Float32Array(liveDesc));
+            const dist = matchResult.distance;
             const confidence = Math.max(0, Math.min(100, Math.round((1 - (dist / 0.70)) * 100)));
 
-            // REJECT if another person (dist > 0.50 - exact SariSmarts threshold)
-            if (dist > 0.50) {
+            // REJECT if another person (SariSmarts FaceMatcher: result.label === "unknown")
+            if (matchResult.label === "unknown") {
                 faceMatched.value = false;
                 Alerts.error(
                     'Access Denied: Face Mismatch',
@@ -1060,12 +1072,12 @@ const SaAttendanceCapturePage = {
                             <div v-else-if="faceMatched && isStaticPhoto" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/90 border border-rose-500/70 text-rose-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_20px_rgba(244,63,94,0.5)] backdrop-blur-md animate-pulse">
                                 <app-icon name="CircleAlert" :size="14" class="text-rose-400" />
-                                <span>⚠️ Photo Detected: Bawal ang Litrato!</span>
+                                <span>⚠️ Photo Detected: Static Pictures Not Allowed</span>
                             </div>
                             <div v-else-if="faceMatched && !isLiveVerified" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/60 text-amber-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(245,158,11,0.3)] backdrop-blur-md">
                                 <span class="h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
-                                <span>Live Check: Paki-kurap ang iyong mata (Blink)</span>
+                                <span>Live Check: Please blink your eyes</span>
                             </div>
                             <div v-else-if="faceDetected" 
                                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-950/90 border border-rose-500/60 text-rose-300 text-[11px] sm:text-[12px] font-mono shadow-[0_0_15px_rgba(244,63,94,0.3)] backdrop-blur-md">
@@ -1171,7 +1183,7 @@ const SaAttendanceCapturePage = {
                             🚫 Static Photo Detected (Attendance Locked)
                         </span>
                         <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
-                            👁️ Paki-kurap ang mata para mag-unlock
+                            👁️ Please blink eyes to unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)
@@ -1203,7 +1215,7 @@ const SaAttendanceCapturePage = {
                             🚫 Static Photo Detected (Attendance Locked)
                         </span>
                         <span v-else-if="isCameraActive && faceMatched && !isLiveVerified" class="text-[11px] text-amber-300 font-mono mt-1 font-bold animate-pulse">
-                            👁️ Paki-kurap ang mata para mag-unlock
+                            👁️ Please blink eyes to unlock
                         </span>
                         <span v-else-if="isCameraActive && faceDetected && !faceMatched" class="text-[11px] text-rose-400 font-mono mt-1">
                             ✕ Unregistered Face (Access Denied)
@@ -1234,7 +1246,7 @@ const SaAttendanceCapturePage = {
                         </span>
                     </div>
 
-                    <!-- Real Interactive Geofence Map GUI (parang map) -->
+                    <!-- Real Interactive Geofence Map GUI -->
                     <attendance-map 
                         :campus-lat="activeSelectedLocation?.lat || 14.327472"
                         :campus-lng="activeSelectedLocation?.lng || 120.940472"

@@ -429,6 +429,18 @@ const SaAttendanceCapturePage = {
                             recentEARs.push(avgEAR);
                             if (recentEARs.length > 25) recentEARs.shift();
 
+                            // Calculate Mouth Aspect Ratio (MAR) for smile/mouth movement
+                            const positions = detection.landmarks.positions;
+                            let isMouthOpen = false;
+                            if (positions && positions.length >= 68) {
+                                const innerLipDist = getPtDist(positions[62], positions[66]);
+                                const mouthWidth = getPtDist(positions[48], positions[54]);
+                                const mar = mouthWidth > 0 ? (innerLipDist / mouthWidth) : 0;
+                                if (mar >= 0.24) {
+                                    isMouthOpen = true;
+                                }
+                            }
+
                             // Biometric Matching (SariSmarts FaceMatcher standard: threshold <= 0.50)
                             if (registeredDescriptor.value && registeredDescriptor.value.length === 128) {
                                 const labeled = new faceapi.LabeledFaceDescriptors(
@@ -446,49 +458,62 @@ const SaAttendanceCapturePage = {
 
                                     if (!matchStartTime) matchStartTime = now;
 
-                                    // STRICT EYE BLINK LIVENESS VERIFICATION (Anti-Photo / Anti-Screen)
-                                    // A static photo or phone screen image CANNOT close its eyelids.
-                                    // Moving, shaking, or tilting a phone will NEVER trigger an eyelid closure.
+                                    // STRICT LIVENESS ANTI-SPOOFING (BLOCKS CELLPHONE SCREEN PHOTOS)
+                                    // A static photo on a phone screen CANNOT close both eyelids or open its mouth.
+                                    // Shaking or moving a phone only produces minor jitter (1-2 px), NEVER a true eye closure.
 
-                                    // 1. Dynamic open-eye baseline adaptation:
+                                    // 1. Establish stable open-eye baseline (requires at least 0.185 EAR)
                                     if (openEyeBaseline === 0) {
-                                        openEyeBaseline = Math.max(0.18, avgEAR);
-                                    } else if (avgEAR > openEyeBaseline * 0.90) {
+                                        if (avgEAR >= 0.185) openEyeBaseline = avgEAR;
+                                    } else if (avgEAR > openEyeBaseline * 0.92) {
                                         openEyeBaseline = Math.max(openEyeBaseline, avgEAR);
                                     }
 
-                                    // 2. Physiological Blink Detection:
-                                    // A real human blink drops EAR by >= 15% from open baseline, or EAR drops by >= 0.025, or drops below 0.19
-                                    const dropFromBaseline = openEyeBaseline - avgEAR;
-                                    const relativeDrop = dropFromBaseline / (openEyeBaseline || 0.25);
-                                    const isEyesClosed = (relativeDrop >= 0.15 || dropFromBaseline >= 0.025 || avgEAR < 0.19);
+                                    // 2. Genuine Eye Closure Check:
+                                    // A real human blink physically closes eyelids:
+                                    // EAR must drop to <= 0.150 AND drop by >= 0.045 from baseline, on both eyes
+                                    const dropFromBaseline = openEyeBaseline > 0 ? (openEyeBaseline - avgEAR) : 0;
+                                    const isTrueEyelidClosure = (
+                                        openEyeBaseline >= 0.185 &&
+                                        openEyeFrames >= 5 &&
+                                        avgEAR <= 0.150 &&
+                                        leftEAR <= 0.155 &&
+                                        rightEAR <= 0.155 &&
+                                        dropFromBaseline >= 0.045
+                                    );
 
-                                    if (isEyesClosed && openEyeFrames >= 2) {
-                                        // User had open eyes and is actively blinking/closing eyes
+                                    if (isTrueEyelidClosure) {
                                         eyeClosingFrames++;
-                                    } else if (!isEyesClosed) {
-                                        // Eyes are open: check if the user just completed a valid physiological blink
-                                        if (eyeClosingFrames >= 1 && eyeClosingFrames <= 9) {
-                                            // Valid blink: closed for 1-9 frames (~100ms to 900ms) and now reopened!
+                                    } else {
+                                        // When eyes reopen (EAR >= 0.180) after being closed for 1-7 frames: VALID LIVE BLINK!
+                                        if (eyeClosingFrames >= 1 && eyeClosingFrames <= 7 && avgEAR >= 0.180) {
                                             blinkDetected.value = true;
                                             blinkCount.value++;
                                             isLiveVerified.value = true;
                                             isStaticPhoto.value = false;
                                         }
                                         eyeClosingFrames = 0;
-                                        openEyeFrames++;
+                                        if (avgEAR >= 0.185) {
+                                            openEyeFrames++;
+                                        }
                                     }
 
-                                    // 3. Status Evaluation
+                                    // 3. Alternative Live Check: Natural Mouth Opening / Smiling (Impossible on static phone photo)
+                                    if (isMouthOpen && openEyeFrames >= 5) {
+                                        isLiveVerified.value = true;
+                                        isStaticPhoto.value = false;
+                                    }
+
+                                    // 4. Status Evaluation & Feedback
                                     if (isLiveVerified.value) {
                                         isStaticPhoto.value = false;
                                         hudMessage.value = `✓ Live Person Verified (${confidence}% match) — Ready`;
                                     } else {
                                         const elapsedMatch = now - matchStartTime;
-                                        if (elapsedMatch > 4500) {
-                                            // Photo detected: face matched on camera for > 4.5s without any natural eyelid blink
+                                        if (elapsedMatch > 3500) {
+                                            // Photo detected: face on camera for > 3.5s without any genuine human blink or mouth motion
                                             isStaticPhoto.value = true;
-                                            hudMessage.value = '⚠️ Static Photo Detected! Live blink required';
+                                            hudMessage.value = '⚠️ Static Photo Detected! Real human blink required';
                                         } else {
                                             isStaticPhoto.value = false;
                                             hudMessage.value = `Face Matched (${confidence}%) · Please blink your eyes to verify`;
@@ -532,7 +557,7 @@ const SaAttendanceCapturePage = {
                 } finally {
                     isFaceDetecting.value = false;
                 }
-            }, 110);
+            }, 100);
         };
 
         // ---------- Attendance Submission with Live Frame Instant Check (SariSmarts Parity) ----------
@@ -1176,7 +1201,7 @@ const SaAttendanceCapturePage = {
 
                     <!-- 1. Check-In -->
                     <button type="button" @click="logAttendance('CHECK_IN')" 
-                            :disabled="submitting || !isWithinGeofence"
+                            :disabled="submitting || !canSubmitAttendance"
                             class="group relative flex flex-col items-center justify-center p-5 rounded-xl border transition-all duration-200 text-center select-none"
                             :class="canSubmitAttendance
                                 ? 'bg-gradient-to-b from-emerald-500/20 via-emerald-600/15 to-emerald-900/30 border-emerald-500/60 hover:border-emerald-400 hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] cursor-pointer'
@@ -1208,7 +1233,7 @@ const SaAttendanceCapturePage = {
 
                     <!-- 2. Check-Out -->
                     <button type="button" @click="logAttendance('CHECK_OUT')" 
-                            :disabled="submitting || !isWithinGeofence"
+                            :disabled="submitting || !canSubmitAttendance"
                             class="group relative flex flex-col items-center justify-center p-5 rounded-xl border transition-all duration-200 text-center select-none"
                             :class="canSubmitAttendance
                                 ? 'bg-gradient-to-b from-rose-500/20 via-rose-600/15 to-rose-900/30 border-rose-500/60 hover:border-rose-400 hover:shadow-[0_0_25px_rgba(244,63,94,0.35)] cursor-pointer'

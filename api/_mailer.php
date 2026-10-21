@@ -58,7 +58,7 @@ function assistpay_mail_settings(): array
     try {
         global $pdo;
         if (isset($pdo) && $pdo) {
-            $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'mail_%'");
+            $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'mail_%' OR setting_key LIKE 'brevo_%'");
             if ($stmt) {
                 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                     $k = strtoupper($row['setting_key']);
@@ -72,7 +72,7 @@ function assistpay_mail_settings(): array
 
     // 3. Environment variables (highest priority for Docker / Render)
     $env = [];
-    foreach (['MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_FROM_NAME', 'MAIL_ENCRYPTION'] as $name) {
+    foreach (['MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_FROM_NAME', 'MAIL_ENCRYPTION', 'BREVO_API_KEY', 'MAIL_TRANSPORT'] as $name) {
         $v = getenv($name);
         if ($v !== false && trim((string) $v) !== '') $env[$name] = trim((string) $v);
     }
@@ -86,8 +86,66 @@ function assistpay_mail_settings(): array
 function assistpay_mail_ready(): bool
 {
     $s = assistpay_mail_settings();
-    return trim((string) ($s['MAIL_USERNAME'] ?? '')) !== ''
-        && trim((string) ($s['MAIL_PASSWORD'] ?? '')) !== '';
+    return trim((string) ($s['BREVO_API_KEY'] ?? '')) !== ''
+        || (trim((string) ($s['MAIL_USERNAME'] ?? '')) !== '' && trim((string) ($s['MAIL_PASSWORD'] ?? '')) !== '');
+}
+
+/**
+ * Sends transactional email via Brevo REST API over HTTPS (Port 443).
+ * Works 100% on cloud platforms like Render where outbound SMTP (ports 25, 465, 587) is blocked.
+ */
+function assistpay_send_via_brevo(string $apiKey, array $to, string $subject, string $html, string $text = ''): array
+{
+    $settings = assistpay_mail_settings();
+    $senderEmail = $settings['MAIL_FROM_ADDRESS'] ?? $settings['MAIL_USERNAME'] ?? 'magpantaydaizy3@gmail.com';
+    $senderName = $settings['MAIL_FROM_NAME'] ?: 'AssistPay — NCST S.A. System';
+
+    $toRecipients = [];
+    foreach ($to as $addr) {
+        $toRecipients[] = ['email' => $addr];
+    }
+
+    $payload = [
+        'sender' => [
+            'name' => $senderName,
+            'email' => $senderEmail,
+        ],
+        'to' => $toRecipients,
+        'subject' => $subject,
+        'htmlContent' => $html,
+    ];
+    if (trim($text) !== '') {
+        $payload['textContent'] = $text;
+    } else {
+        $payload['textContent'] = trim(strip_tags(preg_replace('~<br\s*/?>~i', "\n", $html)));
+    }
+
+    $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_HTTPHEADER => [
+            'api-key: ' . $apiKey,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($httpCode >= 200 && $httpCode < 300) {
+        return ['sent' => true, 'error' => null, 'recipients' => $to];
+    }
+
+    $errorMsg = 'Brevo HTTP ' . $httpCode . ': ' . ($response ?: $curlError ?: 'Request failed');
+    error_log('AssistPay Brevo mail failed: ' . $errorMsg);
+    return ['sent' => false, 'error' => $errorMsg, 'recipients' => $to];
 }
 
 function assistpay_mailer(): PHPMailer
@@ -136,6 +194,16 @@ function assistpay_send_mail(array $to, string $subject, string $html, string $t
     ), fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL))));
 
     if (!$to) return ['sent' => false, 'error' => 'No valid email address on record.'];
+
+    $settings = assistpay_mail_settings();
+    $brevoKey = trim((string) ($settings['BREVO_API_KEY'] ?? ''));
+    $transport = strtolower(trim((string) ($settings['MAIL_TRANSPORT'] ?? '')));
+
+    // If Brevo API key is available and transport is not forced to SMTP, send via HTTPS API
+    if ($brevoKey !== '' && $transport !== 'smtp') {
+        return assistpay_send_via_brevo($brevoKey, $to, $subject, $html, $text);
+    }
+
     if (!assistpay_mail_ready()) return ['sent' => false, 'error' => 'Mail server credentials are not configured.'];
 
     try {

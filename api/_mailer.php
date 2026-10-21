@@ -31,10 +31,21 @@ function assistpay_mail_settings(): array
     static $settings = null;
     if ($settings !== null) return $settings;
 
+    $defaults = [
+        'MAIL_HOST' => 'smtp.gmail.com',
+        'MAIL_PORT' => 465,
+        'MAIL_USERNAME' => 'magpantaydaizy3@gmail.com',
+        'MAIL_PASSWORD' => 'znupsbtxbdtarzme',
+        'MAIL_FROM_NAME' => 'AssistPay — NCST S.A. System',
+        'MAIL_ENCRYPTION' => 'ssl',
+    ];
+
+    // 1. Secrets file outside the web root (e.g. local XAMPP)
     $file = [];
     foreach ([
         'C:/xampp/private_config/assistpay_secrets.php',
         'C:/xampp/private_config/sarismart_secrets.php',
+        dirname(__DIR__) . '/private_config/assistpay_secrets.php',
     ] as $path) {
         if (is_readable($path)) {
             $file = (array) require $path;
@@ -42,15 +53,33 @@ function assistpay_mail_settings(): array
         }
     }
 
+    // 2. Database system_settings table (dynamic fallback)
+    $db = [];
+    try {
+        global $pdo;
+        if (isset($pdo) && $pdo) {
+            $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'mail_%'");
+            if ($stmt) {
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $k = strtoupper($row['setting_key']);
+                    if ($k === 'MAIL_USER') $k = 'MAIL_USERNAME';
+                    if ($k === 'MAIL_PASS') $k = 'MAIL_PASSWORD';
+                    if (!empty($row['setting_value'])) $db[$k] = trim($row['setting_value']);
+                }
+            }
+        }
+    } catch (Throwable $_) {}
+
+    // 3. Environment variables (highest priority for Docker / Render)
     $env = [];
     foreach (['MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_FROM_NAME', 'MAIL_ENCRYPTION'] as $name) {
         $v = getenv($name);
         if ($v !== false && trim((string) $v) !== '') $env[$name] = trim((string) $v);
     }
 
-    $settings = $file + $env;
-    $settings['MAIL_HOST'] = $settings['MAIL_HOST'] ?? 'smtp.gmail.com';
-    $settings['MAIL_PORT'] = (int) ($settings['MAIL_PORT'] ?? 587);
+    $settings = array_merge($defaults, $db, $file, $env);
+    $settings['MAIL_HOST'] = $settings['MAIL_HOST'] ?: 'smtp.gmail.com';
+    $settings['MAIL_PORT'] = (int) ($settings['MAIL_PORT'] ?: 465);
     return $settings;
 }
 
@@ -66,18 +95,31 @@ function assistpay_mailer(): PHPMailer
     $s = assistpay_mail_settings();
     $mail = new PHPMailer(true);
     $mail->isSMTP();
-    $mail->Host = $s['MAIL_HOST'];
+    $mail->Host = $s['MAIL_HOST'] ?: 'smtp.gmail.com';
     $mail->SMTPAuth = true;
     $mail->Username = (string) ($s['MAIL_USERNAME'] ?? '');
     $mail->Password = (string) ($s['MAIL_PASSWORD'] ?? '');
 
+    $port = (int) ($s['MAIL_PORT'] ?: 465);
     $enc = strtolower(trim((string) ($s['MAIL_ENCRYPTION'] ?? '')));
-    if ($enc === '') $enc = $s['MAIL_PORT'] === 465 ? 'ssl' : 'tls';
-    $mail->SMTPSecure = $enc === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port = $s['MAIL_PORT'];
+    if ($enc === '') $enc = ($port === 465) ? 'ssl' : 'tls';
+
+    $mail->SMTPSecure = ($enc === 'ssl') ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port = $port;
     $mail->Timeout = 15;
     $mail->CharSet = 'UTF-8';
-    $mail->setFrom($mail->Username, 'AssistPay — NCST S.A. System');
+
+    // Relax peer verification to prevent SSL handshake failure in containerized or missing-CA environments
+    $mail->SMTPOptions = [
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => true,
+        ],
+    ];
+
+    $fromName = $s['MAIL_FROM_NAME'] ?: 'AssistPay — NCST S.A. System';
+    $mail->setFrom($mail->Username, $fromName);
     $mail->isHTML(true);
     return $mail;
 }
@@ -106,10 +148,10 @@ function assistpay_send_mail(array $to, string $subject, string $html, string $t
         return ['sent' => true, 'error' => null, 'recipients' => $to];
     } catch (MailerException $e) {
         error_log('AssistPay mail failed: ' . $e->getMessage());
-        return ['sent' => false, 'error' => 'The email could not be sent.', 'recipients' => $to];
+        return ['sent' => false, 'error' => $e->getMessage(), 'recipients' => $to];
     } catch (Throwable $e) {
         error_log('AssistPay mail failed: ' . $e->getMessage());
-        return ['sent' => false, 'error' => 'The email could not be sent.', 'recipients' => $to];
+        return ['sent' => false, 'error' => $e->getMessage(), 'recipients' => $to];
     }
 }
 

@@ -6942,7 +6942,7 @@ function reconcile_cross_department_assignments(int $semesterId, int $actorUserI
           FROM schedule_assignments a
           JOIN sa_profiles p ON p.id = a.sa_profile_id
          WHERE a.semester_id = ?
-           AND a.department COLLATE utf8mb4_unicode_ci != p.sa_category COLLATE utf8mb4_unicode_ci
+           AND CAST(a.department AS CHAR) != CAST(p.sa_category AS CHAR)
            AND NOT (p.sa_category = "RELIEVER" AND a.department = "ITO")
     ');
     $stmt->execute([$semesterId]);

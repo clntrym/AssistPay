@@ -532,9 +532,16 @@ function ensure_matching_board_tables(): void
     if ($done) return;
     $done = true;
 
-    if (function_exists('schema_guard_ready') && schema_guard_ready('matching_board_tables_v2', 86400)) {
+    if (function_exists('schema_guard_ready') && schema_guard_ready('matching_board_tables_v3', 86400)) {
         return;
     }
+
+    try {
+        $pdo->exec("ALTER TABLE match_slots MODIFY COLUMN override_reason TEXT NULL");
+    } catch (Throwable $_) {}
+    try {
+        $pdo->exec("ALTER TABLE match_candidates MODIFY COLUMN checks TEXT NULL");
+    } catch (Throwable $_) {}
 
     try {
         $colsRun = $pdo->query("SHOW COLUMNS FROM matching_runs")->fetchAll(PDO::FETCH_COLUMN);
@@ -614,7 +621,7 @@ function ensure_matching_board_tables(): void
     } catch (Throwable $_) {}
 
     if (function_exists('schema_guard_mark_ready')) {
-        schema_guard_mark_ready('matching_board_tables_v2');
+        schema_guard_mark_ready('matching_board_tables_v3');
     }
 }
 
